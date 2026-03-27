@@ -963,144 +963,183 @@ const app = (function() {
         document.getElementById('thermalPreviewModal').classList.remove('active');
     }
 
-    // Simpan Kontak (native + fallback)
-    async function saveContact() {
-        const nama = document.getElementById('nama').value.trim();
-        let nohp = document.getElementById('nohp').value.trim();
-        if (!nama) { showToast('Isi nama pelanggan terlebih dahulu'); return; }
-        if (!nohp) { showToast('Isi nomor HP pelanggan terlebih dahulu'); return; }
-        nohp = nohp.replace(/\D/g, '');
-        if (!nohp) { showToast('Nomor HP tidak valid'); return; }
-        const vCard = `BEGIN:VCARD
-VERSION:3.0
-FN:${nama}
-TEL;TYPE=CELL:${nohp}
-END:VCARD`;
-
-        if (isCapacitor()) {
-            const Filesystem = getPlugin('Filesystem');
-            const Share = getPlugin('Share');
-            if (Filesystem && Share) {
-                try {
-                    const fileName = `${nama.replace(/\s/g, '_')}.vcf`;
-                    const result = await Filesystem.writeFile({
-                        path: fileName,
-                        data: vCard,
-                        directory: 'CACHE',
-                        recursive: true
-                    });
-                    const uri = result.uri;
-                    await Share.share({
-                        title: 'Simpan Kontak',
-                        text: `Kontak ${nama}`,
-                        files: [uri],
-                        dialogTitle: 'Simpan ke kontak'
-                    });
-                    showToast('Kontak siap disimpan');
-                } catch (err) {
-                    showToast('Gagal: ' + err.message);
-                }
-            } else {
-                showToast('Plugin tidak tersedia');
-            }
-        } else {
-            const blob = new Blob([vCard], { type: 'text/vcard' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `${nama}.vcf`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            showToast('File kontak dibuat. Buka dengan aplikasi Kontak.');
-        }
-    }
-
-    // Impor Kontak (native + fallback)
+    // ========== FUNGSI KONTAK YANG DIPERBAIKI ==========
     async function importContact() {
         if (isCapacitor()) {
             const Contacts = getPlugin('Contacts');
             if (Contacts) {
                 try {
+                    // Request permission
                     const permission = await Contacts.requestPermissions();
-                    if (permission.contacts === 'granted') {
-                        const result = await Contacts.pickContact();
-                        if (result && result.contact) {
-                            document.getElementById('nama').value = result.contact.name.displayName || result.contact.name.givenName || '';
-                            const phone = result.contact.phoneNumbers?.[0]?.number || '';
-                            let cleaned = phone.replace(/\D/g, '');
-                            if (cleaned.startsWith('62')) cleaned = '0' + cleaned.substring(2);
-                            if (cleaned.startsWith('+62')) cleaned = '0' + cleaned.substring(3);
-                            document.getElementById('nohp').value = cleaned;
-                            showToast('Kontak diimport');
+                    if (permission.granted || permission.contacts === 'granted') {
+                        // Ambil semua kontak
+                        const result = await Contacts.getContacts({
+                            projection: {
+                                name: true,
+                                phones: true
+                            }
+                        });
+                        
+                        if (result.contacts && result.contacts.length > 0) {
+                            // Sort kontak berdasarkan nama
+                            const contacts = result.contacts.sort((a, b) => {
+                                const nameA = (a.displayName || a.name?.given || '').toLowerCase();
+                                const nameB = (b.displayName || b.name?.given || '').toLowerCase();
+                                return nameA.localeCompare(nameB);
+                            });
+                            
+                            // Buat list nama untuk dipilih
+                            let options = contacts.map((c, i) => {
+                                const name = c.displayName || c.name?.given || 'Unknown';
+                                const phone = c.phones && c.phones[0] ? c.phones[0].number : 'No phone';
+                                return `${i + 1}. ${name} (${phone})`;
+                            }).slice(0, 20).join('\n'); // Batasi 20 kontak pertama
+                            
+                            const choice = prompt(
+                                `Pilih kontak (1-${Math.min(contacts.length, 20)}):\n${options}\n\nMasukkan nomor:`, 
+                                "1"
+                            );
+                            
+                            if (choice) {
+                                const index = parseInt(choice) - 1;
+                                if (index >= 0 && index < contacts.length) {
+                                    const contact = contacts[index];
+                                    const name = contact.displayName || contact.name?.given || contact.name?.family || '';
+                                    
+                                    // Ambil nomor telepon pertama yang ada
+                                    let phone = '';
+                                    if (contact.phones && contact.phones.length > 0) {
+                                        // Cari nomor mobile/hp dulu
+                                        const mobilePhone = contact.phones.find(p => 
+                                            p.type === 'mobile' || p.type === 'cell' || p.label === 'Mobile'
+                                        );
+                                        phone = mobilePhone ? mobilePhone.number : contact.phones[0].number;
+                                    }
+                                    
+                                    // Isi form
+                                    document.getElementById('nama').value = name;
+                                    
+                                    // Bersihkan format nomor
+                                    let cleaned = phone.replace(/[^\d+]/g, '');
+                                    if (cleaned.startsWith('62')) cleaned = '0' + cleaned.substring(2);
+                                    if (cleaned.startsWith('+62')) cleaned = '0' + cleaned.substring(3);
+                                    document.getElementById('nohp').value = cleaned;
+                                    
+                                    showToast('✅ Kontak diimport: ' + name);
+                                }
+                            }
+                        } else {
+                            showToast('Tidak ada kontak ditemukan');
                         }
                     } else {
-                        showToast('Izin kontak diperlukan');
+                        showToast('Izin kontak diperlukan. Silakan aktifkan di Settings > Apps.');
                     }
                 } catch (e) {
-                    showToast('Gagal mengakses kontak: ' + e.message);
+                    console.error('Contact import error:', e);
+                    showToast('Gagal: ' + e.message);
                 }
             } else {
                 showToast('Plugin kontak tidak tersedia');
             }
-        } else if ('contacts' in navigator && navigator.contacts) {
-            try {
-                let contacts = await navigator.contacts.select(['name', 'tel'], { multiple: false });
-                if (contacts.length) {
-                    document.getElementById('nama').value = contacts[0].name[0];
-                    let phone = contacts[0].tel[0];
-                    phone = phone.replace(/\D/g, '');
-                    if (phone.startsWith('62')) phone = '0' + phone.substring(2);
-                    if (phone.startsWith('+62')) phone = '0' + phone.substring(3);
-                    document.getElementById('nohp').value = phone;
-                    showToast('Kontak diimport');
-                }
-            } catch (e) {
-                showToast('Gagal mengakses kontak');
-            }
         } else {
-            showToast('Fitur kontak tidak tersedia');
+            showToast('Fitur kontak hanya tersedia di aplikasi Android');
         }
     }
 
-    // Kamera Native
-    async function handleFotoDevice(input) {
+    async function saveContact() {
+        const nama = document.getElementById('nama').value.trim();
+        let nohp = document.getElementById('nohp').value.trim();
+        
+        if (!nama) { 
+            showToast('Isi nama pelanggan terlebih dahulu'); 
+            return; 
+        }
+        if (!nohp) { 
+            showToast('Isi nomor HP pelanggan terlebih dahulu'); 
+            return; 
+        }
+        
+        nohp = nohp.replace(/\D/g, '');
+        if (!nohp) { 
+            showToast('Nomor HP tidak valid'); 
+            return; 
+        }
+        
+        // Buat vCard dengan format RFC 6350 yang benar (menggunakan CRLF)
+        const vCardLines = [
+            'BEGIN:VCARD',
+            'VERSION:3.0',
+            `FN:${nama}`,
+            `N:${nama};;;`,
+            `TEL;TYPE=CELL:${nohp}`,
+            'END:VCARD',
+            ''  // Empty line at end
+        ];
+        const vCard = vCardLines.join('\r\n');
+        
         if (isCapacitor()) {
-            const Camera = getPlugin('Camera');
-            if (Camera) {
+            const Filesystem = getPlugin('Filesystem');
+            const Share = getPlugin('Share');
+            
+            if (Filesystem && Share) {
                 try {
-                    await Camera.requestPermissions();
-                    const photo = await Camera.getPhoto({
-                        quality: 80,
-                        allowEditing: false,
-                        resultType: 'dataUrl'
+                    // Sanitize filename (hapus karakter spesial)
+                    const safeName = nama.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_').substring(0, 20);
+                    const fileName = `Kontak_${safeName}_${Date.now()}.vcf`;
+                    
+                    // Convert ke Base64 (wajib untuk Filesystem Capacitor)
+                    const vCardBase64 = btoa(unescape(encodeURIComponent(vCard)));
+                    
+                    // Write file ke cache directory
+                    const result = await Filesystem.writeFile({
+                        path: fileName,
+                        data: vCardBase64,
+                        directory: 'CACHE',
+                        recursive: true
                     });
-                    if (photo && photo.dataUrl) {
-                        fotoDeviceData = photo.dataUrl;
-                        let preview = document.getElementById('fotoPreview');
-                        preview.innerHTML = `<img src="${fotoDeviceData}" style="max-width:100%; max-height:100px; border-radius:8px;">`;
-                        preview.style.display = 'block';
-                    }
+                    
+                    // Share file menggunakan URI
+                    await Share.share({
+                        title: 'Simpan Kontak',
+                        text: `Kontak: ${nama}`,
+                        files: [result.uri],
+                        dialogTitle: 'Pilih aplikasi untuk menyimpan kontak'
+                    });
+                    
+                    showToast('✅ File kontak dibuat. Pilih "Contacts" atau "Kontak" untuk menyimpan.');
                 } catch (err) {
-                    console.error('Camera error:', err);
-                    showToast('Gagal mengambil foto: ' + err.message);
+                    console.error('Save contact error:', err);
+                    showToast('❌ Gagal: ' + err.message);
+                    
+                    // Fallback: langsung share sebagai text jika file gagal
+                    try {
+                        await Share.share({
+                            title: 'Info Kontak',
+                            text: `Nama: ${nama}\nNo HP: ${nohp}\n\nSimpan ke kontak manual.`
+                        });
+                    } catch (e) {
+                        // ignore fallback error
+                    }
                 }
             } else {
-                showToast('Plugin kamera tidak tersedia');
+                showToast('Plugin Filesystem/Share tidak tersedia');
             }
         } else {
-            let file = input.files[0];
-            if(!file) return;
-            if(file.size > 2*1024*1024){ showToast('Foto maksimal 2MB'); return; }
-            let reader = new FileReader();
-            reader.onload = e => {
-                fotoDeviceData = e.target.result;
-                let preview = document.getElementById('fotoPreview');
-                preview.innerHTML = `<img src="${fotoDeviceData}" style="max-width:100%; max-height:100px; border-radius:8px;">`;
-                preview.style.display = 'block';
-            };
-            reader.readAsDataURL(file);
+            // Web fallback dengan download
+            try {
+                const blob = new Blob([vCard], { type: 'text/vcard;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Kontak_${nama.replace(/\s+/g, '_')}.vcf`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                showToast('✅ File kontak diunduh. Buka file untuk menyimpan ke kontak.');
+            } catch (err) {
+                showToast('Gagal membuat file: ' + err.message);
+            }
         }
     }
 
