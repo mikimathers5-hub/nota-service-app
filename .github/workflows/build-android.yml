@@ -3,6 +3,8 @@ name: Build Android APK
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:  # Bisa trigger manual dari HP
 
 jobs:
@@ -37,6 +39,95 @@ jobs:
       - name: Add Android platform
         run: npx cap add android
 
+      # 🔥 FIX: Create AndroidManifest.xml dengan semua permission
+      - name: Create AndroidManifest.xml with permissions
+        run: |
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          
+          # Buat manifest baru yang lengkap
+          cat > $MANIFEST << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              package="com.example.notaservice">
+          
+              <!-- Contacts Permissions -->
+              <uses-permission android:name="android.permission.READ_CONTACTS" />
+              <uses-permission android:name="android.permission.WRITE_CONTACTS" />
+              
+              <!-- Storage Permissions -->
+              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+              <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+              <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+              
+              <!-- Camera Permission -->
+              <uses-permission android:name="android.permission.CAMERA" />
+              
+              <!-- Bluetooth Permissions -->
+              <uses-permission android:name="android.permission.BLUETOOTH" />
+              <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+              <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+              <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+              
+              <!-- Internet -->
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+          
+              <application
+                  android:allowBackup="true"
+                  android:icon="@mipmap/ic_launcher"
+                  android:label="@string/app_name"
+                  android:roundIcon="@mipmap/ic_launcher_round"
+                  android:supportsRtl="true"
+                  android:theme="@style/AppTheme"
+                  android:usesCleartextTraffic="true">
+                  
+                  <activity
+                      android:name="com.getcapacitor.BridgeActivity"
+                      android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
+                      android:exported="true"
+                      android:launchMode="singleTask"
+                      android:theme="@style/AppTheme.NoActionBar">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+          
+                  <!-- FileProvider untuk share file -->
+                  <provider
+                      android:name="androidx.core.content.FileProvider"
+                      android:authorities="${applicationId}.fileprovider"
+                      android:exported="false"
+                      android:grantUriPermissions="true">
+                      <meta-data
+                          android:name="android.support.FILE_PROVIDER_PATHS"
+                          android:resource="@xml/file_paths" />
+                  </provider>
+              </application>
+          </manifest>
+          EOF
+          
+          echo "✅ AndroidManifest.xml created with all permissions"
+
+      # 🔥 FIX: Create file_paths.xml untuk FileProvider (Share plugin)
+      - name: Create file_paths.xml
+        run: |
+          mkdir -p android/app/src/main/res/xml
+          cat > android/app/src/main/res/xml/file_paths.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <paths xmlns:android="http://schemas.android.com/apk/res/android">
+              <external-path name="external_files" path="." />
+              <files-path name="files" path="." />
+              <cache-path name="cache" path="." />
+              <external-files-path name="external_app_files" path="." />
+              <external-cache-path name="external_app_cache" path="." />
+          </paths>
+          EOF
+          
+          echo "✅ file_paths.xml created"
+
       - name: Sync Capacitor
         run: npx cap sync
 
@@ -63,3 +154,10 @@ jobs:
           name: NotaService-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 5
+
+      - name: Upload build logs (if failed)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: android/app/build/outputs/
