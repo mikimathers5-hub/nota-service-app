@@ -1143,6 +1143,100 @@ const app = (function() {
         }
     }
 
+    // ========== FUNGSI KAMERA YANG DIPERBAIKI ==========
+    async function handleFotoDevice(input) {
+        if (isCapacitor()) {
+            const Camera = getPlugin('Camera');
+            if (!Camera) {
+                showToast('Plugin kamera tidak tersedia');
+                return;
+            }
+
+            try {
+                // Check permissions
+                const permissionStatus = await Camera.checkPermissions();
+                if (permissionStatus.camera !== 'granted') {
+                    const requestResult = await Camera.requestPermissions();
+                    if (requestResult.camera !== 'granted') {
+                        showToast('Izin kamera diperlukan');
+                        return;
+                    }
+                }
+
+                // Take photo
+                const photo = await Camera.getPhoto({
+                    quality: 80,
+                    allowEditing: false,
+                    resultType: Camera.CameraResultType.DataUrl,
+                    source: Camera.CameraSource.Camera,
+                    direction: Camera.CameraDirection.Rear,
+                    saveToGallery: true
+                });
+
+                if (photo && photo.dataUrl) {
+                    fotoDeviceData = photo.dataUrl;
+                    const preview = document.getElementById('fotoPreview');
+                    preview.innerHTML = `<img src="${fotoDeviceData}" style="max-width:100%; max-height:150px; border-radius:8px; object-fit:cover;">`;
+                    preview.style.display = 'block';
+                    showToast('✅ Foto berhasil diambil');
+                } else {
+                    showToast('Tidak ada foto yang diambil');
+                }
+            } catch (err) {
+                console.error('Camera error:', err);
+                if (err.message && err.message.includes('cancelled')) {
+                    showToast('Pengambilan foto dibatalkan');
+                } else {
+                    showToast('❌ Gagal mengambil foto: ' + (err.message || 'Unknown error'));
+                    // Fallback to gallery
+                    fallbackToGallery();
+                }
+            }
+        } else {
+            // Web fallback: file input
+            const file = input.files[0];
+            if (!file) return;
+            if (file.size > 2 * 1024 * 1024) {
+                showToast('Foto maksimal 2MB');
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = e => {
+                fotoDeviceData = e.target.result;
+                const preview = document.getElementById('fotoPreview');
+                preview.innerHTML = `<img src="${fotoDeviceData}" style="max-width:100%; max-height:150px; border-radius:8px; object-fit:cover;">`;
+                preview.style.display = 'block';
+                showToast('✅ Foto berhasil dipilih');
+            };
+            reader.onerror = () => showToast('❌ Gagal membaca file foto');
+            reader.readAsDataURL(file);
+        }
+    }
+
+    async function fallbackToGallery() {
+        const Camera = getPlugin('Camera');
+        if (!Camera) return;
+
+        try {
+            const photo = await Camera.getPhoto({
+                quality: 80,
+                allowEditing: false,
+                resultType: Camera.CameraResultType.DataUrl,
+                source: Camera.CameraSource.Photos  // pick from gallery
+            });
+
+            if (photo && photo.dataUrl) {
+                fotoDeviceData = photo.dataUrl;
+                const preview = document.getElementById('fotoPreview');
+                preview.innerHTML = `<img src="${fotoDeviceData}" style="max-width:100%; max-height:150px; border-radius:8px; object-fit:cover;">`;
+                preview.style.display = 'block';
+                showToast('✅ Foto dipilih dari galeri');
+            }
+        } catch (err) {
+            showToast('❌ Gagal membuka galeri: ' + err.message);
+        }
+    }
+
     // Fungsi selectType, selectAmbilStatus, resetForm, buatNotaBaru, backToForm, showHistory, showSettings, saveSettings, handleLogo, removeLogo, toggleDarkMode, renderHistory, loadHistoryItem, exportCSV, exportJSON, restoreData, clearAllData, init
     // (Saya sertakan kembali secara ringkas, pastikan semua ada)
 
