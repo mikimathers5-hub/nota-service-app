@@ -10,6 +10,15 @@
       "android": {
         "quality": 80
       }
+    },
+    "BluetoothLe": {
+      "android": {
+        "bluetoothPermissions": [
+          "android.permission.BLUETOOTH_SCAN",
+          "android.permission.BLUETOOTH_CONNECT",
+          "android.permission.ACCESS_FINE_LOCATION"
+        ]
+      }
     }
   }
 }
