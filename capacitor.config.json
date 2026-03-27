@@ -1,0 +1,15 @@
+{
+  "appId": "com.example.notaservice",
+  "appName": "Nota Service HP",
+  "webDir": ".",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "Camera": {
+      "android": {
+        "quality": 80
+      }
+    }
+  }
+}
