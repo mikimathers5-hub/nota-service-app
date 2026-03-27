@@ -19,6 +19,22 @@
           "android.permission.ACCESS_FINE_LOCATION"
         ]
       }
+    },
+    "Contacts": {
+      "android": {
+        "permissions": [
+          "android.permission.READ_CONTACTS",
+          "android.permission.WRITE_CONTACTS"
+        ]
+      }
+    },
+    "Filesystem": {
+      "android": {
+        "permissions": [
+          "android.permission.READ_EXTERNAL_STORAGE",
+          "android.permission.WRITE_EXTERNAL_STORAGE"
+        ]
+      }
     }
   }
 }
